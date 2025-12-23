@@ -1,12 +1,11 @@
 import React from "react";
 import { Thought } from "../types";
 
-interface FloatingThoughtProps {
+interface Props {
   thought: Thought;
-  isLatest: boolean;
 }
 
-const FloatingThought: React.FC<FloatingThoughtProps> = ({ thought }) => {
+const FloatingThought: React.FC<Props> = ({ thought }) => {
   return (
     <div
       style={{
@@ -16,21 +15,20 @@ const FloatingThought: React.FC<FloatingThoughtProps> = ({ thought }) => {
         transform: `translate(-50%, -50%) scale(${thought.scale})`,
         opacity: thought.opacity,
         pointerEvents: "none",
-        maxWidth: "560px",
-        zIndex: Math.floor(thought.opacity * 100),
+        maxWidth: thought.kind === "question" ? "420px" : "560px",
+        zIndex: thought.kind === "response" ? 100 : 10,
       }}
       className="select-none"
     >
       <p
-        className="
-          text-center
-          italic
-          tracking-wide
-          leading-relaxed
-          text-sm
-          md:text-base
-          text-white/80
-        "
+        className={`
+          text-center italic tracking-wide leading-relaxed
+          ${
+            thought.kind === "question"
+              ? "text-xs text-white/40"
+              : "text-sm md:text-base text-white/80"
+          }
+        `}
       >
         {thought.text}
       </p>
