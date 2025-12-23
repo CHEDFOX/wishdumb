@@ -6,14 +6,68 @@ import { generateThought } from "./services/llmService";
 import { speakThought } from "./services/voiceService";
 import { MAX_THOUGHTS } from "./constants";
 
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
+
 const App: React.FC = () => {
   const [scene, setScene] = useState<Scene>(Scene.LANDING);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
 
   const thoughtsRef = useRef<Thought[]>([]);
   const frameRef = useRef<number>();
+  const recognitionRef = useRef<any>(null);
+
+  // ---------- SPEECH RECOGNITION ----------
+
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setMicError("Microphone not supported");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
+      setMicError(null);
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      processInput(transcript, "voice");
+    };
+
+    recognition.onerror = (event: any) => {
+      setIsListening(false);
+      setMicError(event.error);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) recognitionRef.current.stop();
+    else recognitionRef.current.start();
+  };
 
   // ---------- THOUGHT CREATION ----------
 
@@ -25,25 +79,26 @@ const App: React.FC = () => {
       id: crypto.randomUUID(),
       text,
 
-      // arrive at center
       x: centerX,
       y: centerY,
 
-      // very slow drift
       vx: (Math.random() - 0.5) * 0.06,
       vy: (Math.random() - 0.5) * 0.06,
 
       createdAt: Date.now(),
       anchorTime: Date.now(),
-      phase: "drifting", // drift immediately after arrival
+      phase: "drifting",
 
-      opacity: 0,
-      scale: 1.0,
+      opacity: 1,
+      scale: 1,
 
       method,
     };
 
-    thoughtsRef.current = [thought, ...thoughtsRef.current].slice(0, MAX_THOUGHTS);
+    thoughtsRef.current = [thought, ...thoughtsRef.current].slice(
+      0,
+      MAX_THOUGHTS
+    );
     setThoughts([...thoughtsRef.current]);
   };
 
@@ -53,18 +108,15 @@ const App: React.FC = () => {
     const now = Date.now();
 
     thoughtsRef.current.forEach((t) => {
-      // slow continuous drift
       t.x += t.vx;
       t.y += t.vy;
 
-      // soft boundaries
       const marginX = 160;
       const marginY = 140;
 
       if (t.x < marginX || t.x > window.innerWidth - marginX) t.vx *= -1;
       if (t.y < marginY || t.y > window.innerHeight - 240) t.vy *= -1;
 
-      // fade logic
       const age = now - t.createdAt;
       t.opacity = Math.max(0.35, 0.85 - age / 140000);
     });
@@ -82,7 +134,7 @@ const App: React.FC = () => {
     };
   }, [scene, animateThoughts]);
 
-  // ---------- INPUT ----------
+  // ---------- INPUT HANDLER ----------
 
   const processInput = async (text: string, method: "voice" | "text") => {
     if (!text.trim() || isProcessing) return;
@@ -94,6 +146,8 @@ const App: React.FC = () => {
       const response = await generateThought(text);
       addThought(response, method);
       if (method === "voice") await speakThought(response);
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsProcessing(false);
     }
@@ -123,35 +177,56 @@ const App: React.FC = () => {
             <FloatingThought key={t.id} thought={t} isLatest={false} />
           ))}
 
-          {/* INPUT */}
+          {/* INPUT BAR */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               processInput(inputText, "text");
             }}
-            className="
-              absolute bottom-10 left-1/2 -translate-x-1/2
-              w-full max-w-3xl px-8
-            "
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl px-8"
           >
-            <input
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder={isProcessing ? "" : "enter a thought"}
-              className="
-                w-full
-                bg-black/20
-                border border-white/10
-                rounded-md
-                px-6
-                py-3
-                text-sm
-                tracking-[0.25em]
-                text-center
-                outline-none
-                focus:border-white/30
-              "
-            />
+            {micError && (
+              <p className="text-xs text-center text-red-400 mb-2">
+                {micError}
+              </p>
+            )}
+
+            <div className="flex items-center gap-4 bg-black/20 border border-white/10 rounded-md px-4 py-2">
+              <input
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={
+                  isListening
+                    ? "listening…"
+                    : isProcessing
+                    ? ""
+                    : "enter a thought"
+                }
+                className="flex-1 bg-transparent text-sm tracking-[0.25em] text-center outline-none"
+              />
+
+              {/* MIC BUTTON */}
+              <button
+                type="button"
+                onClick={toggleListening}
+                className={`p-2 rounded-full transition ${
+                  isListening
+                    ? "text-emerald-400"
+                    : "text-white/40 hover:text-white"
+                }`}
+              >
+                🎤
+              </button>
+
+              {/* SEND */}
+              <button
+                type="submit"
+                disabled={isProcessing || !inputText.trim()}
+                className="text-white/40 hover:text-white disabled:opacity-20"
+              >
+                ➤
+              </button>
+            </div>
           </form>
         </>
       )}
