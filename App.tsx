@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Scene, Thought } from './types';
 import BackgroundEngine from './components/BackgroundEngine';
 import FloatingThought from './components/FloatingThought';
-import { generateThought, speakThought } from './services/geminiService';
+import { generateThought } from './services/llmService';
+import { speakThought } from './services/voiceService';
 import { MAX_THOUGHTS } from './constants';
 
 declare global {
