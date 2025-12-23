@@ -15,35 +15,30 @@ const App: React.FC = () => {
   const thoughtsRef = useRef<Thought[]>([]);
   const frameRef = useRef<number>();
 
-  // ---------- THOUGHT SPAWNING ----------
-
-  const randomPosition = () => {
-    const padding = 200;
-    return {
-      x: padding + Math.random() * (window.innerWidth - padding * 2),
-      y: padding + Math.random() * (window.innerHeight - padding * 2),
-    };
-  };
+  // ---------- THOUGHT CREATION ----------
 
   const addThought = (text: string, method: "voice" | "text") => {
-    const pos = randomPosition();
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2 - 40;
 
     const thought: Thought = {
       id: crypto.randomUUID(),
       text,
 
-      x: pos.x,
-      y: pos.y,
+      // arrive at center
+      x: centerX,
+      y: centerY,
 
-      vx: (Math.random() - 0.5) * 0.12,
-      vy: (Math.random() - 0.5) * 0.12,
+      // very slow drift
+      vx: (Math.random() - 0.5) * 0.06,
+      vy: (Math.random() - 0.5) * 0.06,
 
       createdAt: Date.now(),
       anchorTime: Date.now(),
-      phase: "emerging",
+      phase: "drifting", // drift immediately after arrival
 
       opacity: 0,
-      scale: 1.1,
+      scale: 1.0,
 
       method,
     };
@@ -58,36 +53,20 @@ const App: React.FC = () => {
     const now = Date.now();
 
     thoughtsRef.current.forEach((t) => {
+      // slow continuous drift
+      t.x += t.vx;
+      t.y += t.vy;
+
+      // soft boundaries
+      const marginX = 160;
+      const marginY = 140;
+
+      if (t.x < marginX || t.x > window.innerWidth - marginX) t.vx *= -1;
+      if (t.y < marginY || t.y > window.innerHeight - 240) t.vy *= -1;
+
+      // fade logic
       const age = now - t.createdAt;
-
-      // lifecycle
-      if (t.phase === "emerging" && age > 700) {
-        t.phase = "settling";
-        t.anchorTime = now;
-      }
-
-      if (t.phase === "settling" && now - t.anchorTime > 2400) {
-        t.phase = "drifting";
-        t.scale = 1.0;
-      }
-
-      // motion
-      if (t.phase === "drifting") {
-        t.x += t.vx;
-        t.y += t.vy;
-      }
-
-      // boundaries
-      const margin = 140;
-      if (t.x < margin || t.x > window.innerWidth - margin) t.vx *= -1;
-      if (t.y < margin || t.y > window.innerHeight - 260) t.vy *= -1;
-
-      // opacity
-      if (t.phase === "emerging") {
-        t.opacity = Math.min(1, t.opacity + 0.05);
-      } else {
-        t.opacity = Math.max(0.35, 0.9 - age / 120000);
-      }
+      t.opacity = Math.max(0.35, 0.85 - age / 140000);
     });
 
     setThoughts([...thoughtsRef.current]);
@@ -131,31 +110,47 @@ const App: React.FC = () => {
           <button
             onClick={() => {
               setScene(Scene.TRANSITIONING);
-              setTimeout(() => setScene(Scene.CHAT), 2500);
+              setTimeout(() => setScene(Scene.CHAT), 2400);
             }}
-            className="w-56 h-56 rounded-full bg-emerald-500/20 animate-pulse"
+            className="w-52 h-52 rounded-full bg-emerald-500/20 animate-pulse"
           />
         </div>
       )}
 
       {scene === Scene.CHAT && (
         <>
-          {thoughts.map((t, i) => (
-            <FloatingThought key={t.id} thought={t} isLatest={i === 0} />
+          {thoughts.map((t) => (
+            <FloatingThought key={t.id} thought={t} isLatest={false} />
           ))}
 
+          {/* INPUT */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               processInput(inputText, "text");
             }}
-            className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-xl px-6"
+            className="
+              absolute bottom-10 left-1/2 -translate-x-1/2
+              w-full max-w-3xl px-8
+            "
           >
             <input
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={isProcessing ? "" : "Speak to the quiet"}
-              className="w-full bg-black/30 border-b border-white/20 py-5 text-center tracking-[0.2em] outline-none"
+              placeholder={isProcessing ? "" : "enter a thought"}
+              className="
+                w-full
+                bg-black/20
+                border border-white/10
+                rounded-md
+                px-6
+                py-3
+                text-sm
+                tracking-[0.25em]
+                text-center
+                outline-none
+                focus:border-white/30
+              "
             />
           </form>
         </>
