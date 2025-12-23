@@ -17,84 +17,56 @@ const App: React.FC = () => {
   const [scene, setScene] = useState<Scene>(Scene.LANDING);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [inputText, setInputText] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [micError, setMicError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const thoughtsRef = useRef<Thought[]>([]);
   const frameRef = useRef<number>();
   const recognitionRef = useRef<any>(null);
 
-  // ---------- SPEECH RECOGNITION ----------
+  // ---------- SPEECH ----------
 
   useEffect(() => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
 
-    if (!SpeechRecognition) {
-      setMicError("Microphone not supported");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    const recognition = new SR();
     recognition.lang = "en-US";
+    recognition.continuous = false;
 
-    recognition.onstart = () => {
-      setMicError(null);
-      setIsListening(true);
+    recognition.onresult = (e: any) => {
+      const text = e.results[0][0].transcript;
+      handleInput(text, "voice");
     };
 
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      processInput(transcript, "voice");
-    };
-
-    recognition.onerror = (event: any) => {
-      setIsListening(false);
-      setMicError(event.error);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
+    recognition.onend = () => setIsListening(false);
     recognitionRef.current = recognition;
   }, []);
 
   const toggleListening = () => {
     if (!recognitionRef.current) return;
-    if (isListening) recognitionRef.current.stop();
-    else recognitionRef.current.start();
+    isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
+    setIsListening(!isListening);
   };
 
   // ---------- THOUGHT CREATION ----------
 
-  const addThought = (text: string, method: "voice" | "text") => {
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2 - 40;
+  const spawnThought = (text: string, opacity = 0.8): Thought => ({
+    id: crypto.randomUUID(),
+    text,
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2 - 40,
+    vx: (Math.random() - 0.5) * 0.06,
+    vy: (Math.random() - 0.5) * 0.06,
+    createdAt: Date.now(),
+    anchorTime: Date.now(),
+    phase: "drifting",
+    opacity,
+    scale: 1,
+    method: "text",
+  });
 
-    const thought: Thought = {
-      id: crypto.randomUUID(),
-      text,
-
-      x: centerX,
-      y: centerY,
-
-      vx: (Math.random() - 0.5) * 0.06,
-      vy: (Math.random() - 0.5) * 0.06,
-
-      createdAt: Date.now(),
-      anchorTime: Date.now(),
-      phase: "drifting",
-
-      opacity: 1,
-      scale: 1,
-
-      method,
-    };
-
+  const addThought = (thought: Thought) => {
     thoughtsRef.current = [thought, ...thoughtsRef.current].slice(
       0,
       MAX_THOUGHTS
@@ -102,71 +74,86 @@ const App: React.FC = () => {
     setThoughts([...thoughtsRef.current]);
   };
 
-  // ---------- DRIFT ENGINE ----------
+  // ---------- INPUT HANDLING ----------
 
-  const animateThoughts = useCallback(() => {
+  const handleInput = async (text: string, mode: "text" | "voice") => {
+    if (!text.trim() || isProcessing) return;
+
+    setIsProcessing(true);
+    setInputText("");
+
+    // 1️⃣ USER THOUGHT (always appears)
+    addThought(spawnThought(text, 0.35));
+
+    try {
+      const response = await generateThought(text);
+
+      // 2️⃣ RESPONSE (always appears)
+      addThought(
+        spawnThought(
+          response && response.trim().length > 0
+            ? response
+            : "…",
+          0.85
+        )
+      );
+
+      if (mode === "voice") await speakThought(response);
+    } catch {
+      // 3️⃣ FALLBACK RESPONSE (presence never disappears)
+      addThought(
+        spawnThought(
+          "Silence is sometimes the most honest answer.",
+          0.7
+        )
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ---------- DRIFT ----------
+
+  const animate = useCallback(() => {
     const now = Date.now();
 
     thoughtsRef.current.forEach((t) => {
       t.x += t.vx;
       t.y += t.vy;
 
-      const marginX = 160;
-      const marginY = 140;
+      const mx = 140;
+      const my = 120;
 
-      if (t.x < marginX || t.x > window.innerWidth - marginX) t.vx *= -1;
-      if (t.y < marginY || t.y > window.innerHeight - 240) t.vy *= -1;
+      if (t.x < mx || t.x > window.innerWidth - mx) t.vx *= -1;
+      if (t.y < my || t.y > window.innerHeight - 220) t.vy *= -1;
 
       const age = now - t.createdAt;
-      t.opacity = Math.max(0.35, 0.85 - age / 140000);
+      t.opacity = Math.max(0.3, 0.85 - age / 150000);
     });
 
     setThoughts([...thoughtsRef.current]);
-    frameRef.current = requestAnimationFrame(animateThoughts);
+    frameRef.current = requestAnimationFrame(animate);
   }, []);
 
   useEffect(() => {
-    if (scene === Scene.CHAT) {
-      frameRef.current = requestAnimationFrame(animateThoughts);
-    }
-    return () => {
-      if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    };
-  }, [scene, animateThoughts]);
-
-  // ---------- INPUT HANDLER ----------
-
-  const processInput = async (text: string, method: "voice" | "text") => {
-    if (!text.trim() || isProcessing) return;
-
-    setIsProcessing(true);
-    setInputText("");
-
-    try {
-      const response = await generateThought(text);
-      addThought(response, method);
-      if (method === "voice") await speakThought(response);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    if (scene === Scene.CHAT) frameRef.current = requestAnimationFrame(animate);
+    return () => frameRef.current && cancelAnimationFrame(frameRef.current);
+  }, [scene, animate]);
 
   // ---------- UI ----------
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-black text-white">
+    <div className="relative w-full h-screen bg-black overflow-hidden">
       <BackgroundEngine scene={scene} />
 
       {scene === Scene.LANDING && (
-        <div className="absolute inset-0 flex items-center justify-center z-20">
+        <div className="absolute inset-0 flex items-center justify-center">
           <button
+            className="w-52 h-52 rounded-full bg-emerald-500/20 animate-pulse"
             onClick={() => {
               setScene(Scene.TRANSITIONING);
-              setTimeout(() => setScene(Scene.CHAT), 2400);
+              setTimeout(() => setScene(Scene.CHAT), 2000);
             }}
-            className="w-52 h-52 rounded-full bg-emerald-500/20 animate-pulse"
           />
         </div>
       )}
@@ -177,53 +164,32 @@ const App: React.FC = () => {
             <FloatingThought key={t.id} thought={t} isLatest={false} />
           ))}
 
-          {/* INPUT BAR */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              processInput(inputText, "text");
+              handleInput(inputText, "text");
             }}
             className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl px-8"
           >
-            {micError && (
-              <p className="text-xs text-center text-red-400 mb-2">
-                {micError}
-              </p>
-            )}
-
-            <div className="flex items-center gap-4 bg-black/20 border border-white/10 rounded-md px-4 py-2">
+            <div className="flex items-center gap-4 border border-white/10 bg-black/20 px-4 py-2 rounded-md">
               <input
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder={
-                  isListening
-                    ? "listening…"
-                    : isProcessing
-                    ? ""
-                    : "enter a thought"
-                }
+                placeholder="enter a thought"
                 className="flex-1 bg-transparent text-sm tracking-[0.25em] text-center outline-none"
               />
 
-              {/* MIC BUTTON */}
               <button
                 type="button"
                 onClick={toggleListening}
-                className={`p-2 rounded-full transition ${
-                  isListening
-                    ? "text-emerald-400"
-                    : "text-white/40 hover:text-white"
+                className={`text-sm ${
+                  isListening ? "text-emerald-400" : "text-white/40"
                 }`}
               >
                 🎤
               </button>
 
-              {/* SEND */}
-              <button
-                type="submit"
-                disabled={isProcessing || !inputText.trim()}
-                className="text-white/40 hover:text-white disabled:opacity-20"
-              >
+              <button type="submit" className="text-white/40">
                 ➤
               </button>
             </div>
