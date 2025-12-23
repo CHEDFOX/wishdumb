@@ -6,7 +6,7 @@ interface FloatingThoughtProps {
   isLatest: boolean;
 }
 
-const FloatingThought: React.FC<FloatingThoughtProps> = ({ thought, isLatest }) => {
+const FloatingThought: React.FC<FloatingThoughtProps> = ({ thought }) => {
   return (
     <div
       style={{
@@ -16,21 +16,21 @@ const FloatingThought: React.FC<FloatingThoughtProps> = ({ thought, isLatest }) 
         transform: `translate(-50%, -50%) scale(${thought.scale})`,
         opacity: thought.opacity,
         pointerEvents: "none",
-        maxWidth: "480px",
-        zIndex: isLatest ? 1000 : Math.floor(thought.opacity * 100),
+        maxWidth: "560px",
+        zIndex: Math.floor(thought.opacity * 100),
       }}
       className="select-none"
     >
       <p
-        className={`
-          text-center italic tracking-wider leading-relaxed
-          transition-opacity duration-1000
-          ${
-            isLatest
-              ? "text-white text-xl md:text-2xl drop-shadow-[0_0_20px_rgba(255,255,255,0.8)]"
-              : "text-white/70 text-lg drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]"
-          }
-        `}
+        className="
+          text-center
+          italic
+          tracking-wide
+          leading-relaxed
+          text-sm
+          md:text-base
+          text-white/80
+        "
       >
         {thought.text}
       </p>
